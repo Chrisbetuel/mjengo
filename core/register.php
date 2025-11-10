@@ -1,6 +1,10 @@
 <?php
 require_once '../config.php';
 
+// Load translations
+$lang = getCurrentLanguage();
+$translations = loadLanguage($lang);
+
 if (isLoggedIn()) {
     redirect('dashboard.php');
 }
@@ -24,9 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nida_id = sanitize($_POST['nida_id'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
+    $accept_terms = isset($_POST['accept_terms']) ? true : false;
 
     if (empty($first_name) || empty($last_name) || empty($username) || empty($phone_number) || empty($nida_id) || empty($password) || empty($confirm_password)) {
         $errors[] = 'Please fill in all required fields.';
+    } elseif (!$accept_terms) {
+        $errors[] = $translations['terms_required'];
     } elseif ($password !== $confirm_password) {
         $errors[] = 'Passwords do not match.';
     } elseif (strlen($password) < 6) {
@@ -70,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             --accent: #e74c3c;
             --light: #ecf0f1;
             --dark: #2c3e50;
-            --success: #27ae60;
+            --success: #3027aeff;
         }
         
         body {
@@ -516,7 +523,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </button>
                             <div class="invalid-feedback">Passwords must match.</div>
                         </div>
-                        
+
+                        <!-- Terms and Conditions Checkbox -->
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="accept_terms" name="accept_terms" required>
+                            <label class="form-check-label" for="accept_terms">
+                                <?php echo $translations['accept_terms']; ?> <a href="#" data-bs-toggle="modal" data-bs-target="#termsModal" class="text-decoration-none"><?php echo $translations['read_terms']; ?></a>
+                            </label>
+                            <div class="invalid-feedback"><?php echo $translations['terms_required']; ?></div>
+                        </div>
+
                         <button type="submit" class="btn-register">
                             <i class="fas fa-user-plus me-2"></i> Create Account
                         </button>
@@ -527,6 +543,127 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <i class="fas fa-sign-in-alt"></i> Already have an account? Login here
                         </a>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terms Modal -->
+    <div class="modal fade" id="termsModal" tabindex="-1" aria-labelledby="termsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="termsModalLabel"><?php echo $translations['terms_and_conditions']; ?></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <?php if ($lang === 'sw'): ?>
+                        <!-- Swahili Version -->
+                        <div class="terms-section">
+                            <h3>1. Utangulizi</h3>
+                            <p>Karibu kwenye <?php echo SITE_NAME; ?>. Sheria na masharti haya yanafafanua sheria za matumizi ya tovuti yetu na huduma zetu. Kwa kutumia tovuti hii, unakubali kufuata sheria na masharti hizi.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>2. Matumizi ya Huduma</h3>
+                            <p>Huduma zetu zinakusudiwa kusaidia watumiaji kupata vifaa vya ujenzi kupitia michuano ya malipo ya kila siku na mipango mingine ya malipo. Unakubali kutumia huduma hizi kwa madhumuni halali tu.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>3. Usajili na Akaunti</h3>
+                            <p>Ili kutumia huduma zetu kamili, lazima ujisajili akaunti. Taarifa zote unazotoa lazima ziwe sahihi na za sasa. Wewe ndiye mwajibikaji wa kulinda usiri wa akaunti yako.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>4. Malipo na Malipo</h3>
+                            <p>Malipo yanafanywa kupitia njia salama za malipo. Unakubali kulipa ada zote zinazohusiana na huduma unazochagua. Malipo ni ya mwisho na hayatolewi.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>5. Utoaji wa Vifaa</h3>
+                            <p>Vifaa vya ujenzi hutolewa kulingana na mpango wa malipo uliochagua. Tunajitahidi kutoa vifaa kwa wakati, lakini hatuhakikishi utoaji wa wakati maalum.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>6. Kufuta na Kurejesha</h3>
+                            <p>Unaweza kufuta akaunti yako wakati wowote. Baada ya kufuta, taarifa zako zote zitafutwa. Hakuna kurejesha kwa malipo yaliyofanywa.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>7. Ubora wa Vifaa</h3>
+                            <p>Tunatoa vifaa vya ubora wa juu kutoka kwa wasambazaji wa kuaminika. Hata hivyo, hatuhakikishi ubora wa vifaa baada ya utoaji.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>8. Ulinzi wa Taarifa</h3>
+                            <p>Tunazingatia sana ulinzi wa taarifa zako binafsi. Taarifa zako hutumiwa tu kwa madhumuni ya kutoa huduma zetu na hazitashirikiwa na wahusika wengine bila idhini yako.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>9. Marekebisho ya Sheria na Masharti</h3>
+                            <p>Tuna haki ya kurekebisha sheria na masharti haya wakati wowote. Marekebisho yatatangazwa kwenye tovuti yetu.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>10. Mawasiliano</h3>
+                            <p>Kwa maswali yoyote kuhusu sheria na masharti hizi, tafadhali wasiliana nasi kupitia anwani ya barua pepe au nambari ya simu iliyotolewa kwenye tovuti yetu.</p>
+                        </div>
+                    <?php else: ?>
+                        <!-- English Version -->
+                        <div class="terms-section">
+                            <h3>1. Introduction</h3>
+                            <p>Welcome to <?php echo SITE_NAME; ?>. These terms and conditions outline the rules for the use of our website and services. By using this website, you agree to comply with these terms and conditions.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>2. Use of Services</h3>
+                            <p>Our services are intended to help users acquire building materials through daily payment challenges and other payment plans. You agree to use these services for lawful purposes only.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>3. Registration and Account</h3>
+                            <p>To use our full services, you must register an account. All information you provide must be accurate and current. You are responsible for maintaining the confidentiality of your account.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>4. Payments and Billing</h3>
+                            <p>Payments are made through secure payment methods. You agree to pay all fees associated with the services you choose. Payments are final and non-refundable.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>5. Material Delivery</h3>
+                            <p>Building materials are delivered according to the payment plan you choose. We strive to deliver materials on time, but we do not guarantee delivery at specific times.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>6. Cancellation and Refunds</h3>
+                            <p>You can delete your account at any time. After deletion, all your information will be removed. There are no refunds for payments made.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>7. Material Quality</h3>
+                            <p>We provide high-quality materials from trusted suppliers. However, we do not guarantee the quality of materials after delivery.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>8. Privacy Protection</h3>
+                            <p>We take the protection of your personal information very seriously. Your information is used only to provide our services and will not be shared with third parties without your consent.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>9. Amendments to Terms and Conditions</h3>
+                            <p>We reserve the right to amend these terms and conditions at any time. Amendments will be announced on our website.</p>
+                        </div>
+
+                        <div class="terms-section">
+                            <h3>10. Contact</h3>
+                            <p>For any questions regarding these terms and conditions, please contact us via the email address or phone number provided on our website.</p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">I Agree</button>
                 </div>
             </div>
         </div>

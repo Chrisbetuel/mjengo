@@ -12,6 +12,8 @@ if (!isLoggedIn()) {
 $material_id = $_POST['material_id'] ?? null;
 $installment_amount = floatval($_POST['installment_amount'] ?? 0);
 $start_date = $_POST['start_date'] ?? '';
+$user_type = $_POST['user_type'] ?? null;
+$payment_duration = $_POST['payment_duration'] ?? 'daily';
 
 // Validate required fields
 if (!$material_id || !$installment_amount || !$start_date) {
@@ -52,8 +54,8 @@ try {
 
     // Create lipa kidogo record
     $stmt = $pdo->prepare("
-        INSERT INTO lipa_kidogo (user_id, material_id, total_amount, installment_amount, num_installments, start_date, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'active', NOW())
+        INSERT INTO lipa_kidogo (user_id, material_id, total_amount, installment_amount, num_installments, start_date, user_type, payment_duration, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW())
     ");
     $stmt->execute([
         $_SESSION['user_id'],
@@ -61,13 +63,22 @@ try {
         $total_price,
         $installment_amount,
         $num_installments,
-        $start_date
+        $start_date,
+        $user_type,
+        $payment_duration
     ]);
 
     $lipa_kidogo_id = $pdo->lastInsertId();
 
-    // Generate installment schedule
+    // Generate installment schedule based on payment duration
     $current_date = $start_timestamp;
+    $interval = '+1 day';
+    if ($payment_duration === 'weekly') {
+        $interval = '+1 week';
+    } elseif ($payment_duration === 'monthly') {
+        $interval = '+1 month';
+    }
+
     for ($i = 1; $i <= $num_installments; $i++) {
         $installment_date = date('Y-m-d', $current_date);
         $amount = ($i == $num_installments) ? ($total_price - ($i-1) * $installment_amount) : $installment_amount;
@@ -86,8 +97,8 @@ try {
             'pending'
         ]);
 
-        // Move to next day
-        $current_date = strtotime('+1 day', $current_date);
+        // Move to next interval
+        $current_date = strtotime($interval, $current_date);
     }
 
     // Log the transaction

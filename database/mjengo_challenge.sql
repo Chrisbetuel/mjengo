@@ -111,6 +111,16 @@ CREATE TABLE direct_purchases (
     FOREIGN KEY (material_id) REFERENCES materials(id)
 );
 
+-- Feedback table
+CREATE TABLE feedback (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100),
+    message TEXT NOT NULL,
+    rating INT CHECK (rating >= 1 AND rating <= 5),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Insert sample materials
 INSERT INTO materials (name, description, price, created_by) VALUES
 ('Cement - 50kg Bag', 'High quality cement for construction', 1200.00, 1),
@@ -118,3 +128,9 @@ INSERT INTO materials (name, description, price, created_by) VALUES
 ('Sand - 1 Cubic Meter', 'Clean building sand for concrete mixing', 2500.00, 1),
 ('Gravel - 1 Cubic Meter', 'Construction gravel for concrete', 1800.00, 1),
 ('Bricks - 1000 pieces', 'Standard red clay bricks', 15000.00, 1);
+
+-- Insert sample feedback
+INSERT INTO feedback (name, email, message, rating) VALUES
+('John Doe', 'john@example.com', 'Great service! The materials arrived on time and were of excellent quality.', 5),
+('Jane Smith', 'jane@example.com', 'Very satisfied with the challenge program. Helped me save for my construction project.', 4),
+('Mike Johnson', 'mike@example.com', 'Good experience overall. Would recommend to others.', 4);

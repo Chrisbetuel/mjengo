@@ -2,10 +2,33 @@
 require_once 'config.php';
 require_once 'core/translation.php';
 
+// Handle feedback form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_feedback'])) {
+    $subject = sanitize($_POST['subject']);
+    $name = sanitize($_POST['name']);
+    $email = sanitize($_POST['email']);
+    $message = sanitize($_POST['message']);
+    $rating = (int)$_POST['rating'];
+    $user_id = isLoggedIn() ? $_SESSION['user_id'] : null;
+
+    if (!empty($subject) && !empty($name) && !empty($message) && $rating >= 1 && $rating <= 5) {
+        $stmt = $pdo->prepare("INSERT INTO feedback (user_id, subject, name, email, message, rating) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$user_id, $subject, $name, $email, $message, $rating]);
+        $feedback_success = true;
+    } else {
+        $feedback_error = "Please fill in all required fields and provide a valid rating.";
+    }
+}
+
 // Fetch active materials
 $stmt = $pdo->prepare("SELECT id, name, description, image, price, sw_name, sw_description FROM materials WHERE status = 'active' ORDER BY created_at DESC LIMIT 8");
 $stmt->execute();
 $materials = $stmt->fetchAll();
+
+// Fetch recent feedback
+$stmt = $pdo->prepare("SELECT name, email, message, rating, created_at, reply FROM feedback ORDER BY created_at DESC LIMIT 5");
+$stmt->execute();
+$feedbacks = $stmt->fetchAll();
 ?>
 
 <!DOCTYPE html>
@@ -705,34 +728,180 @@ $materials = $stmt->fetchAll();
             transform: translateY(0);
         }
         
+        /* Feedback Carousel */
+        .feedback-section {
+            position: relative;
+        }
+
+        .feedback-carousel-container {
+            position: relative;
+            max-width: 100%;
+            margin: 0 auto;
+            overflow: hidden;
+            padding-left: 60px;
+            padding-right: 60px;
+        }
+
+        .feedback-carousel {
+            display: flex;
+            transition: transform 0.6s ease-in-out;
+        }
+
+        .feedback-slide {
+            min-width: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .feedback-slide.active {
+            display: flex;
+        }
+
+        .feedback-item {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.4s ease;
+            max-width: 500px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feedback-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--secondary), var(--primary));
+            transform: scaleX(0);
+            transition: transform 0.4s ease;
+        }
+
+        .feedback-item:hover::before {
+            transform: scaleX(1);
+        }
+
+        .feedback-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+
+        .feedback-rating {
+            margin-bottom: 15px;
+        }
+
+        .feedback-rating .fas.fa-star {
+            color: #ffc107;
+            margin-right: 2px;
+        }
+
+        .feedback-carousel-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(26, 82, 118, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 15;
+            color: white;
+        }
+
+        .feedback-carousel-arrow:hover {
+            background: var(--secondary);
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        .feedback-carousel-prev {
+            left: 15px;
+        }
+
+        .feedback-carousel-next {
+            right: 15px;
+        }
+
+        .feedback-indicators {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .feedback-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(26, 82, 118, 0.3);
+            margin: 0 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .feedback-indicator.active {
+            background: var(--primary);
+            transform: scale(1.3);
+        }
+
         /* Responsive Adjustments */
         @media (max-width: 992px) {
             .hero h1 {
                 font-size: 3rem;
             }
-            
+
             .step {
                 flex-direction: column;
                 text-align: center;
             }
-            
+
             .step-number {
                 margin-right: 0;
                 margin-bottom: 20px;
             }
+
+            .feedback-carousel-arrow {
+                width: 40px;
+                height: 40px;
+            }
+
+            .feedback-carousel-prev {
+                left: -20px;
+            }
+
+            .feedback-carousel-next {
+                right: -20px;
+            }
         }
-        
+
         @media (max-width: 768px) {
             .hero h1 {
                 font-size: 2.5rem;
             }
-            
+
             .hero p {
                 font-size: 1.2rem;
             }
-            
+
             .section-title h2 {
                 font-size: 2rem;
+            }
+
+            .feedback-carousel-arrow {
+                display: none; /* Hide arrows on mobile for better UX */
+            }
+
+            .feedback-item {
+                padding: 20px;
             }
         }
     </style>
@@ -972,6 +1141,108 @@ $materials = $stmt->fetchAll();
         </div>
     </section>
 
+    <!-- Feedback Section -->
+    <section class="feedback-section" style="padding: 100px 0; background: rgba(255, 255, 255, 0.9);">
+        <div class="container">
+            <div class="section-title">
+                <h2>What Our Customers Say</h2>
+                <p class="lead">Read feedback from our satisfied customers</p>
+            </div>
+            <div class="row">
+                <div class="col-lg-6">
+                    <?php if (!empty($feedbacks)): ?>
+                        <div class="feedback-carousel-container">
+                            <div class="feedback-carousel">
+                                <?php foreach ($feedbacks as $index => $feedback): ?>
+                                    <div class="feedback-slide <?php echo $index === 0 ? 'active' : ''; ?>" data-slide="<?php echo $index; ?>">
+                                        <div class="feedback-item animate-on-scroll">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <div class="feedback-rating me-2">
+                                                    <?php for ($i = 1; $i <= 5; $i++): ?>
+                                                        <i class="fas fa-star <?php echo $i <= $feedback['rating'] ? '' : 'text-muted'; ?>"></i>
+                                                    <?php endfor; ?>
+                                                </div>
+                                                <strong><?php echo htmlspecialchars($feedback['name']); ?></strong>
+                                                <?php if (!empty($feedback['email'])): ?>
+                                                    <small class="text-muted ms-2">(<?php echo htmlspecialchars($feedback['email']); ?>)</small>
+                                                <?php endif; ?>
+                                            </div>
+                                            <p class="mb-3"><?php echo htmlspecialchars($feedback['message']); ?></p>
+                                            <?php if (!empty($feedback['reply'])): ?>
+                                                <div class="mt-3 p-3 bg-light rounded">
+                                                    <small class="text-primary fw-bold">Admin Reply:</small>
+                                                    <p class="mb-0 mt-2"><?php echo htmlspecialchars($feedback['reply']); ?></p>
+                                                </div>
+                                            <?php endif; ?>
+                                            <small class="text-muted"><?php echo date('M d, Y', strtotime($feedback['created_at'])); ?></small>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+
+                            <!-- Navigation Arrows -->
+                            <button class="feedback-carousel-arrow feedback-carousel-prev" id="prevFeedback">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <button class="feedback-carousel-arrow feedback-carousel-next" id="nextFeedback">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+
+                            <!-- Indicators -->
+                            <div class="feedback-indicators">
+                                <?php for ($i = 0; $i < count($feedbacks); $i++): ?>
+                                    <span class="feedback-indicator <?php echo $i === 0 ? 'active' : ''; ?>" data-slide="<?php echo $i; ?>"></span>
+                                <?php endfor; ?>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <p>No feedback available yet.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="col-lg-6">
+                    <div class="feedback-form-container">
+                        <h3>Share Your Feedback</h3>
+                        <?php if (isset($feedback_success)): ?>
+                            <div class="alert alert-success">Thank you for your feedback!</div>
+                        <?php endif; ?>
+                        <?php if (isset($feedback_error)): ?>
+                            <div class="alert alert-danger"><?php echo $feedback_error; ?></div>
+                        <?php endif; ?>
+                        <form method="POST" class="feedback-form">
+                            <div class="mb-3">
+                                <label for="subject" class="form-label">Subject *</label>
+                                <input type="text" class="form-control" id="subject" name="subject" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Name *</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email" name="email">
+                            </div>
+                            <div class="mb-3">
+                                <label for="message" class="form-label">Message *</label>
+                                <textarea class="form-control" id="message" name="message" rows="4" required></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Rating *</label>
+                                <div class="rating-stars">
+                                    <input type="radio" id="star5" name="rating" value="5" required><label for="star5"><i class="fas fa-star"></i></label>
+                                    <input type="radio" id="star4" name="rating" value="4"><label for="star4"><i class="fas fa-star"></i></label>
+                                    <input type="radio" id="star3" name="rating" value="3"><label for="star3"><i class="fas fa-star"></i></label>
+                                    <input type="radio" id="star2" name="rating" value="2"><label for="star2"><i class="fas fa-star"></i></label>
+                                    <input type="radio" id="star1" name="rating" value="1"><label for="star1"><i class="fas fa-star"></i></label>
+                                </div>
+                            </div>
+                            <button type="submit" name="submit_feedback" class="btn btn-primary">Submit Feedback</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- CTA Section -->
     <section class="cta">
         <div class="container">
@@ -1122,6 +1393,49 @@ $materials = $stmt->fetchAll();
 
             // Auto-play carousel (optional)
             setInterval(nextSlide, 3000); // Change slide every 3 seconds
+
+            // Feedback Carousel Functionality
+            let currentFeedbackSlide = 0;
+            const feedbackSlides = document.querySelectorAll('.feedback-slide');
+            const feedbackIndicators = document.querySelectorAll('.feedback-indicator');
+            const totalFeedbackSlides = feedbackSlides.length;
+
+            function showFeedbackSlide(index) {
+                feedbackSlides.forEach(slide => slide.classList.remove('active'));
+                feedbackIndicators.forEach(indicator => indicator.classList.remove('active'));
+
+                feedbackSlides[index].classList.add('active');
+                feedbackIndicators[index].classList.add('active');
+                currentFeedbackSlide = index;
+            }
+
+            function nextFeedbackSlide() {
+                currentFeedbackSlide = (currentFeedbackSlide + 1) % totalFeedbackSlides;
+                showFeedbackSlide(currentFeedbackSlide);
+            }
+
+            function prevFeedbackSlide() {
+                currentFeedbackSlide = (currentFeedbackSlide - 1 + totalFeedbackSlides) % totalFeedbackSlides;
+                showFeedbackSlide(currentFeedbackSlide);
+            }
+
+            // Event listeners for feedback carousel controls
+            if (document.getElementById('nextFeedback')) {
+                document.getElementById('nextFeedback').addEventListener('click', nextFeedbackSlide);
+            }
+            if (document.getElementById('prevFeedback')) {
+                document.getElementById('prevFeedback').addEventListener('click', prevFeedbackSlide);
+            }
+
+            // Event listeners for feedback indicators
+            feedbackIndicators.forEach((indicator, index) => {
+                indicator.addEventListener('click', () => showFeedbackSlide(index));
+            });
+
+            // Auto-play feedback carousel (optional)
+            if (totalFeedbackSlides > 1) {
+                setInterval(nextFeedbackSlide, 5000); // Change slide every 5 seconds
+            }
         });
     </script>
 </body>

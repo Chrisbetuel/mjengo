@@ -778,7 +778,7 @@ $materials = $stmt->fetchAll();
 
     <!-- Material Selection Modal -->
     <div class="modal fade" id="materialModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Buy in Installments</h5>
@@ -788,10 +788,34 @@ $materials = $stmt->fetchAll();
                     <div id="materialDetails"></div>
                     <form id="installmentForm" method="POST" action="process_lipa_kidogo.php">
                         <input type="hidden" id="selectedMaterialId" name="material_id">
+
+                        <!-- User Type Selection -->
                         <div class="mb-3">
-                            <label for="installmentAmount" class="form-label">Daily Installment Amount (TSh)</label>
+                            <label for="userType" class="form-label">Are you a businessman or employed?</label>
+                            <select class="form-control" id="userType" name="user_type" required>
+                                <option value="">Select your type</option>
+                                <option value="businessman">Businessman</option>
+                                <option value="employed">Employed</option>
+                            </select>
+                            <div class="form-text">This helps us understand your payment preferences</div>
+                        </div>
+
+                        <!-- Payment Duration Selection -->
+                        <div class="mb-3">
+                            <label for="paymentDuration" class="form-label">Payment Duration</label>
+                            <select class="form-control" id="paymentDuration" name="payment_duration" required>
+                                <option value="">Select payment frequency</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                            <div class="form-text">How often would you like to make payments?</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="installmentAmount" class="form-label">Installment Amount (TSh)</label>
                             <input type="number" class="form-control" id="installmentAmount" name="installment_amount" step="0.01" min="1" required>
-                            <div class="form-text">Enter the amount you can pay daily</div>
+                            <div class="form-text">Enter the amount you can pay per <span id="frequencyText">day</span></div>
                         </div>
                         <div class="mb-3">
                             <label for="startDate" class="form-label">Start Date</label>
@@ -904,7 +928,7 @@ $materials = $stmt->fetchAll();
                 <div class="alert alert-info border-0 rounded-3 mb-4" style="background: rgba(26, 82, 118, 0.1); border-left: 4px solid var(--primary) !important;">
                     <h6 class="fw-bold">${name}</h6>
                     <p class="mb-1">Total Price: <strong>TSh ${price.toLocaleString()}</strong></p>
-                    <p class="mb-0">You can pay this amount in daily installments of your choice.</p>
+                    <p class="mb-0">You can pay this amount in installments of your choice.</p>
                 </div>
             `;
 
@@ -919,8 +943,39 @@ $materials = $stmt->fetchAll();
             document.getElementById('installmentAmount').min = Math.max(1, Math.round(price * 0.01));
             document.getElementById('installmentAmount').max = price;
 
+            // Reset form fields
+            document.getElementById('userType').value = '';
+            document.getElementById('paymentDuration').value = 'daily';
+            updateFrequencyText();
+
             new bootstrap.Modal(document.getElementById('materialModal')).show();
         }
+
+        function updateFrequencyText() {
+            const duration = document.getElementById('paymentDuration').value;
+            const frequencyText = document.getElementById('frequencyText');
+            switch(duration) {
+                case 'daily':
+                    frequencyText.textContent = 'day';
+                    break;
+                case 'weekly':
+                    frequencyText.textContent = 'week';
+                    break;
+                case 'monthly':
+                    frequencyText.textContent = 'month';
+                    break;
+                default:
+                    frequencyText.textContent = 'day';
+            }
+        }
+
+        // Add event listener for payment duration change
+        document.addEventListener('DOMContentLoaded', function() {
+            const paymentDurationSelect = document.getElementById('paymentDuration');
+            if (paymentDurationSelect) {
+                paymentDurationSelect.addEventListener('change', updateFrequencyText);
+            }
+        });
     </script>
 </body>
 </html>

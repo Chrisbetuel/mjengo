@@ -5,6 +5,9 @@ if (!isLoggedIn()) {
     redirect('login.php');
 }
 
+// Load translations
+$translations = loadLanguage();
+
 $user_id = $_SESSION['user_id'];
 
 // Fetch user info
@@ -562,6 +565,25 @@ foreach ($lipa_kidogo_payments as $payment) {
                     <?php if (isAdmin()): ?>
                         <li class="nav-item"><a class="nav-link" href="admin.php">Admin</a></li>
                     <?php endif; ?>
+                    <!-- Language Switcher -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-globe me-1"></i> <?php echo AVAILABLE_LANGUAGES[getCurrentLanguage()]; ?>
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="languageDropdown">
+                            <?php foreach (AVAILABLE_LANGUAGES as $code => $name): ?>
+                                <li>
+                                    <form method="POST" class="d-inline">
+                                        <input type="hidden" name="switch_language" value="1">
+                                        <input type="hidden" name="language" value="<?php echo $code; ?>">
+                                        <button type="submit" class="dropdown-item <?php echo $code === getCurrentLanguage() ? 'active' : ''; ?>">
+                                            <?php echo $name; ?>
+                                        </button>
+                                    </form>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </li>
                     <li class="nav-item"><a class="nav-link" href="logout.php">Logout</a></li>
                 </ul>
             </div>
@@ -574,17 +596,17 @@ foreach ($lipa_kidogo_payments as $payment) {
             <!-- Welcome Section -->
             <div class="welcome-card animate-on-scroll">
                 <div class="welcome-content">
-                    <h1 class="welcome-title">Welcome back, <?php echo htmlspecialchars($username); ?>! 👋</h1>
-                    <p class="welcome-subtitle">Here's your building progress overview</p>
+                    <h1 class="welcome-title"><?php echo __('welcome_back'); ?>, <?php echo htmlspecialchars($username); ?>! 👋</h1>
+                    <p class="welcome-subtitle"><?php echo __('heres_your_overview'); ?></p>
                     <div class="row mt-4">
                         <div class="col-md-4">
                             <p><i class="fas fa-envelope me-2"></i> <?php echo htmlspecialchars($email); ?></p>
                         </div>
                         <div class="col-md-4">
-                            <p><i class="fas fa-calendar me-2"></i> Member since <?php echo $join_date; ?></p>
+                            <p><i class="fas fa-calendar me-2"></i> <?php echo __('member_since'); ?> <?php echo $join_date; ?></p>
                         </div>
                         <div class="col-md-4">
-                            <p><i class="fas fa-tasks me-2"></i> <?php echo count($user_challenges); ?> Active Challenges</p>
+                            <p><i class="fas fa-tasks me-2"></i> <?php echo count($user_challenges); ?> <?php echo __('active_challenges_count'); ?></p>
                         </div>
                     </div>
                 </div>
@@ -597,31 +619,31 @@ foreach ($lipa_kidogo_payments as $payment) {
                         <i class="fas fa-check-circle"></i>
                     </div>
                     <div class="stat-value text-success">TSh <?php echo number_format($total_paid, 2); ?></div>
-                    <div class="stat-label">Total Paid</div>
+                    <div class="stat-label"><?php echo __('total_paid'); ?></div>
                 </div>
-                
+
                 <div class="stat-card warning animate-on-scroll">
                     <div class="stat-icon text-warning">
                         <i class="fas fa-clock"></i>
                     </div>
                     <div class="stat-value text-warning">TSh <?php echo number_format($total_pending, 2); ?></div>
-                    <div class="stat-label">Pending Payments</div>
+                    <div class="stat-label"><?php echo __('pending_payments'); ?></div>
                 </div>
-                
+
                 <div class="stat-card danger animate-on-scroll">
                     <div class="stat-icon text-danger">
                         <i class="fas fa-exclamation-triangle"></i>
                     </div>
                     <div class="stat-value text-danger"><?php echo $overdue_count; ?></div>
-                    <div class="stat-label">Overdue Payments</div>
+                    <div class="stat-label"><?php echo __('overdue_payments'); ?></div>
                 </div>
-                
+
                 <div class="stat-card info animate-on-scroll">
                     <div class="stat-icon text-primary">
                         <i class="fas fa-cubes"></i>
                     </div>
                     <div class="stat-value text-primary">TSh <?php echo number_format($total_material_value, 2); ?></div>
-                    <div class="stat-label">Materials Value</div>
+                    <div class="stat-label"><?php echo __('materials_value'); ?></div>
                 </div>
             </div>
 

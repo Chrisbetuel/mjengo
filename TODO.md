@@ -1,4 +1,12 @@
-# TODO: Add 'postponement' language key
+# Feedback Integration Task
 
-- [x] Add 'postponement' => 'Postponement' to languages/en.php under Status section
-- [x] Add 'postponement' => 'Kuahirisha' to languages/sw.php under Status section
+## Tasks
+- [x] Create feedback table in database/mjengo_challenge.sql
+- [x] Update index.php to add feedback form section
+- [x] Update index.php to add feedback review section
+- [x] Handle form submission in index.php to save feedback
+- [x] Fetch and display recent feedbacks in review section
+- [x] Test feedback form submission and display
+
+## Status
+- Completed
