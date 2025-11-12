@@ -1,4 +1,7 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 require_once 'config.php';
 
 // Auto-login admin for development
@@ -14,7 +17,71 @@ $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['add_material']) || isset($_POST['edit_material'])) {
+if (isset($_POST['create_notification'])) {
+        // Handle notification creation
+        $title = sanitize($_POST['notification_title']);
+        $message_text = sanitize($_POST['notification_message']);
+        $type = sanitize($_POST['notification_type']);
+        $priority = sanitize($_POST['notification_priority']);
+        $actionUrl = !empty($_POST['action_url']) ? sanitize($_POST['action_url']) : null;
+        $actionText = !empty($_POST['action_text']) ? sanitize($_POST['action_text']) : null;
+        $expiresAt = !empty($_POST['expires_at']) ? $_POST['expires_at'] : null;
+        $targetUserId = !empty($_POST['target_user_id']) ? intval($_POST['target_user_id']) : null;
+        $targetChallengeId = !empty($_POST['target_challenge_id']) ? intval($_POST['target_challenge_id']) : null;
+
+        if (empty($title) || empty($message_text) || empty($type)) {
+            $message = 'Please fill in all required fields.';
+            $messageType = 'danger';
+        } else {
+            try {
+                $userIds = [];
+
+                if ($targetUserId) {
+                    // Send to specific user
+                    $userIds = [$targetUserId];
+                } elseif ($targetChallengeId) {
+                    // Send to all members of the challenge
+                    $stmt = $pdo->prepare("SELECT user_id FROM participants WHERE challenge_id = ?");
+                    $stmt->execute([$targetChallengeId]);
+                    $userIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                } else {
+                    // Send to all users (default)
+                    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'user'");
+                    $userIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                }
+
+                $successCount = 0;
+                foreach ($userIds as $userId) {
+                    $result = createInAppNotification($userId, $title, $message_text, $type, $actionUrl, $actionText, $priority, $expiresAt);
+                    if ($result) $successCount++;
+                }
+
+                if ($successCount > 0) {
+                    $targetDesc = $targetUserId ? 'the selected user' : ($targetChallengeId ? 'challenge members' : 'all users');
+                    $message = "Notification sent to $successCount $targetDesc successfully!";
+                    $messageType = 'success';
+                } else {
+                    $message = 'Failed to send notifications.';
+                    $messageType = 'danger';
+                }
+            } catch (Exception $e) {
+                $message = 'Error creating notification: ' . $e->getMessage();
+                $messageType = 'danger';
+            }
+        }
+        } elseif (isset($_POST['delete_notification'])) {
+        // Handle notification deletion
+        $notificationId = intval($_POST['notification_id']);
+        try {
+            $stmt = $pdo->prepare("DELETE FROM in_app_notifications WHERE id = ?");
+            $stmt->execute([$notificationId]);
+            $message = 'Notification deleted successfully!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'Error deleting notification: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
+    } elseif (isset($_POST['add_material']) || isset($_POST['edit_material'])) {
         // Handle material addition or editing
         $name = sanitize($_POST['material_name']);
         $description = sanitize($_POST['material_description']);
@@ -117,6 +184,154 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'danger';
             }
         }
+    } elseif (isset($_POST['reply_feedback'])) {
+        // Handle feedback reply
+        $feedbackId = intval($_POST['feedback_id']);
+        $reply = sanitize($_POST['reply_feedback']);
+        try {
+            $stmt = $pdo->prepare("UPDATE feedback SET reply = ? WHERE id = ?");
+            $stmt->execute([$reply, $feedbackId]);
+            $message = 'Reply sent successfully!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'Error sending reply: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
+    } elseif (isset($_POST['delete_feedback'])) {
+        // Handle feedback deletion
+        $feedbackId = intval($_POST['feedback_id']);
+        try {
+            $stmt = $pdo->prepare("DELETE FROM feedback WHERE id = ?");
+            $stmt->execute([$feedbackId]);
+            $message = 'Feedback deleted successfully!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'Error deleting feedback: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
+    } elseif (isset($_POST['edit_group'])) {
+        // Handle group editing
+        $groupId = intval($_POST['group_id']);
+        $groupName = sanitize($_POST['group_name']);
+        $groupDescription = sanitize($_POST['group_description']);
+        $maxMembers = intval($_POST['max_members']);
+        $groupStatus = sanitize($_POST['group_status']);
+
+        if (empty($groupName) || $maxMembers < 1) {
+            $message = 'Please fill in all required fields with valid data.';
+            $messageType = 'danger';
+        } else {
+            try {
+                $stmt = $pdo->prepare("UPDATE groups SET name = ?, description = ?, max_members = ?, status = ? WHERE id = ?");
+                $stmt->execute([$groupName, $groupDescription, $maxMembers, $groupStatus, $groupId]);
+                $message = 'Group updated successfully!';
+                $messageType = 'success';
+            } catch (Exception $e) {
+                $message = 'Error updating group: ' . $e->getMessage();
+                $messageType = 'danger';
+            }
+        }
+    } elseif (isset($_POST['delete_group'])) {
+        // Handle group deletion
+        $groupId = intval($_POST['group_id']);
+        try {
+            // Delete group members first (due to foreign key constraints)
+            $stmt = $pdo->prepare("DELETE FROM group_members WHERE group_id = ?");
+            $stmt->execute([$groupId]);
+
+            // Delete the group
+            $stmt = $pdo->prepare("DELETE FROM groups WHERE id = ?");
+            $stmt->execute([$groupId]);
+
+            $message = 'Group deleted successfully!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'Error deleting group: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
+    } elseif (isset($_POST['remove_member'])) {
+        // Handle member removal
+        $memberId = intval($_POST['member_id']);
+        try {
+            $stmt = $pdo->prepare("DELETE FROM group_members WHERE id = ?");
+            $stmt->execute([$memberId]);
+            $message = 'Member removed from group successfully!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'Error removing member: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
+    } elseif (isset($_POST['create_group'])) {
+        // Handle group creation
+        $groupName = sanitize($_POST['new_group_name']);
+        $groupDescription = sanitize($_POST['new_group_description']);
+        $maxMembers = intval($_POST['new_max_members']);
+        $groupLeaderId = intval($_POST['group_leader_id']);
+        $groupType = sanitize($_POST['group_type']);
+
+        if (empty($groupName) || $maxMembers < 2 || $maxMembers > 50) {
+            $message = 'Please fill in all required fields with valid data.';
+            $messageType = 'danger';
+        } else {
+            try {
+                $pdo->beginTransaction();
+
+                // Create the group
+                $stmt = $pdo->prepare("INSERT INTO groups (name, description, leader_id, max_members, status) VALUES (?, ?, ?, ?, 'active')");
+                $stmt->execute([$groupName, $groupDescription, $groupLeaderId, $maxMembers]);
+                $groupId = $pdo->lastInsertId();
+
+                // Add leader as first member
+                $stmt = $pdo->prepare("INSERT INTO group_members (group_id, user_id, status) VALUES (?, ?, 'active')");
+                $stmt->execute([$groupId, $groupLeaderId]);
+
+                // Handle challenge creation if custom
+                if ($groupType === 'custom') {
+                    $customName = sanitize($_POST['custom_challenge_name']);
+                    $customDailyAmount = floatval($_POST['custom_daily_amount']);
+                    $customStartDate = $_POST['custom_start_date'];
+                    $customEndDate = $_POST['custom_end_date'];
+                    $customMaxParticipants = intval($_POST['custom_max_participants']);
+                    $customDescription = sanitize($_POST['custom_challenge_description']);
+
+                    if (!empty($customName) && $customDailyAmount > 0 && !empty($customStartDate) && !empty($customEndDate)) {
+                        $stmt = $pdo->prepare("INSERT INTO challenges (name, description, daily_amount, max_participants, start_date, end_date, created_by, status, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)");
+                        $stmt->execute([$customName, $customDescription, $customDailyAmount, $customMaxParticipants, $customStartDate, $customEndDate, $_SESSION['user_id'], $groupId]);
+
+                        $challengeId = $pdo->lastInsertId();
+                        $stmt = $pdo->prepare("UPDATE groups SET challenge_id = ? WHERE id = ?");
+                        $stmt->execute([$challengeId, $groupId]);
+                    }
+                } elseif ($groupType === 'existing') {
+                    $existingChallengeId = intval($_POST['existing_challenge_id']);
+                    if ($existingChallengeId > 0) {
+                        $stmt = $pdo->prepare("UPDATE groups SET challenge_id = ? WHERE id = ?");
+                        $stmt->execute([$existingChallengeId, $groupId]);
+                    }
+                }
+
+                $pdo->commit();
+                $message = 'Group created successfully!';
+                $messageType = 'success';
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                $message = 'Error creating group: ' . $e->getMessage();
+                $messageType = 'danger';
+            }
+        }
+    } elseif (isset($_POST['change_member_status'])) {
+        // Handle member status change
+        $memberId = intval($_POST['member_id']);
+        $newStatus = sanitize($_POST['member_status']);
+        try {
+            $stmt = $pdo->prepare("UPDATE group_members SET status = ? WHERE id = ?");
+            $stmt->execute([$newStatus, $memberId]);
+            $message = 'Member status updated successfully!';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'Error updating member status: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
     }
 }
 
@@ -138,6 +353,15 @@ try {
     // Handle error silently for now
 }
 
+// Get users for display
+$users = [];
+try {
+    $stmt = $pdo->query("SELECT id, username, email, phone_number, nida_id, role, created_at FROM users WHERE role = 'user' ORDER BY created_at DESC");
+    $users = $stmt->fetchAll();
+} catch (Exception $e) {
+    // Handle error silently for now
+}
+
 // Get statistics
 $stats = [
     'users' => 0,
@@ -151,6 +375,15 @@ try {
     $stats['challenges'] = $pdo->query("SELECT COUNT(*) FROM challenges WHERE status = 'active'")->fetchColumn();
     $stats['materials'] = $pdo->query("SELECT COUNT(*) FROM materials WHERE status = 'active'")->fetchColumn();
     $stats['orders'] = $pdo->query("SELECT COUNT(*) FROM direct_purchases WHERE status = 'pending'")->fetchColumn();
+} catch (Exception $e) {
+    // Handle error silently
+}
+
+// Get feedback for display
+$feedbacks = [];
+try {
+    $stmt = $pdo->query("SELECT f.*, u.username FROM feedback f LEFT JOIN users u ON f.user_id = u.id ORDER BY f.created_at DESC");
+    $feedbacks = $stmt->fetchAll();
 } catch (Exception $e) {
     // Handle error silently
 }
@@ -823,7 +1056,12 @@ try {
                     <i class="fas fa-users-cog"></i>
                     <span class="menu-text">Group Registrations</span>
                 </a></li>
-                
+
+                <li><a href="admin_group_challenges.php">
+                    <i class="fas fa-trophy"></i>
+                    <span class="menu-text">Group Challenges</span>
+                </a></li>
+
                 <li><a href="#payments-section">
                     <i class="fas fa-credit-card"></i>
                     <span class="menu-text">Payments</span>
@@ -1181,13 +1419,260 @@ try {
                 <!-- Group Registrations Management -->
                 <div class="form-card animate-on-scroll mb-4" id="group-management">
                     <div class="form-header">
-                        <h5 class="form-title"><i class="fas fa-users-cog me-2"></i> Group Registrations Management</h5>
+                        <h5 class="form-title"><i class="fas fa-users-cog me-2"></i> Group Management</h5>
                     </div>
                     <div class="form-body">
+                        <!-- Create New Group Section -->
+                        <div class="mb-4">
+                            <button class="btn btn-admin mb-3" type="button" data-bs-toggle="collapse" data-bs-target="#createGroupCollapse" aria-expanded="false">
+                                <i class="fas fa-plus-circle me-2"></i> Create New Group
+                            </button>
+                            <div class="collapse" id="createGroupCollapse">
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <form method="POST" id="createGroupForm">
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="new_group_name" class="form-label">Group Name</label>
+                                                    <input type="text" class="form-control" id="new_group_name" name="new_group_name" placeholder="Enter group name" required>
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="new_max_members" class="form-label">Max Members</label>
+                                                    <input type="number" class="form-control" id="new_max_members" name="new_max_members" min="2" max="50" value="10" required>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="new_group_description" class="form-label">Description</label>
+                                                <textarea class="form-control" id="new_group_description" name="new_group_description" rows="2" placeholder="Describe the group"></textarea>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label">Group Type</label>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="group_type" id="group_type_existing" value="existing" checked>
+                                                    <label class="form-check-label" for="group_type_existing">
+                                                        Join existing challenge
+                                                    </label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="group_type" id="group_type_custom" value="custom">
+                                                    <label class="form-check-label" for="group_type_custom">
+                                                        Create custom challenge (requires admin approval)
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <!-- Existing Challenge Section -->
+                                            <div id="existingChallengeSection">
+                                                <div class="mb-3">
+                                                    <label for="existing_challenge_id" class="form-label">Select Challenge</label>
+                                                    <select class="form-control" id="existing_challenge_id" name="existing_challenge_id">
+                                                        <option value="">Choose a challenge...</option>
+                                                        <?php
+                                                        try {
+                                                            $stmt = $pdo->query("SELECT id, name, daily_amount FROM challenges WHERE status = 'active' ORDER BY name");
+                                                            $active_challenges = $stmt->fetchAll();
+                                                            foreach ($active_challenges as $challenge): ?>
+                                                                <option value="<?php echo $challenge['id']; ?>">
+                                                                    <?php echo htmlspecialchars($challenge['name']); ?> - TSh <?php echo number_format($challenge['daily_amount'], 0); ?>/day
+                                                                </option>
+                                                            <?php endforeach;
+                                                        } catch (Exception $e) {
+                                                            // Handle silently
+                                                        }
+                                                        ?>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <!-- Custom Challenge Section -->
+                                            <div id="customChallengeSection" style="display: none;">
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="custom_challenge_name" class="form-label">Challenge Name</label>
+                                                        <input type="text" class="form-control" id="custom_challenge_name" name="custom_challenge_name" placeholder="Custom challenge name">
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="custom_daily_amount" class="form-label">Daily Amount (TSh)</label>
+                                                        <input type="number" class="form-control" id="custom_daily_amount" name="custom_daily_amount" min="100" step="50" placeholder="100">
+                                                    </div>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="custom_start_date" class="form-label">Start Date</label>
+                                                        <input type="date" class="form-control" id="custom_start_date" name="custom_start_date">
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="custom_end_date" class="form-label">End Date</label>
+                                                        <input type="date" class="form-control" id="custom_end_date" name="custom_end_date">
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="custom_max_participants" class="form-label">Max Participants</label>
+                                                    <input type="number" class="form-control" id="custom_max_participants" name="custom_max_participants" min="2" max="200" value="90">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="custom_challenge_description" class="form-label">Challenge Description</label>
+                                                    <textarea class="form-control" id="custom_challenge_description" name="custom_challenge_description" rows="2" placeholder="Describe the custom challenge"></textarea>
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label for="group_leader_id" class="form-label">Group Leader</label>
+                                                <select class="form-control" id="group_leader_id" name="group_leader_id" required>
+                                                    <option value="">Select a leader...</option>
+                                                    <?php
+                                                    try {
+                                                        $stmt = $pdo->query("SELECT id, username, email FROM users WHERE role = 'user' ORDER BY username");
+                                                        $users = $stmt->fetchAll();
+                                                        foreach ($users as $user): ?>
+                                                            <option value="<?php echo $user['id']; ?>">
+                                                                <?php echo htmlspecialchars($user['username']); ?> (<?php echo htmlspecialchars($user['email']); ?>)
+                                                            </option>
+                                                        <?php endforeach;
+                                                    } catch (Exception $e) {
+                                                        // Handle silently
+                                                    }
+                                                    ?>
+                                                </select>
+                                            </div>
+
+                                            <button type="submit" name="create_group" class="btn btn-success">
+                                                <i class="fas fa-plus-circle me-2"></i> Create Group
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <?php
+                        // Fetch groups for display
+                        $groups = [];
+                        try {
+                            $stmt = $pdo->query("SELECT g.*, COUNT(gm.id) as member_count FROM groups g LEFT JOIN group_members gm ON g.id = gm.group_id GROUP BY g.id ORDER BY g.created_at DESC");
+                            $groups = $stmt->fetchAll();
+                        } catch (Exception $e) {
+                            // Handle silently
+                        }
+                        ?>
+
+                        <?php if (empty($groups)): ?>
                         <div class="text-center py-4">
                             <i class="fas fa-users fa-3x text-muted mb-3"></i>
-                            <p class="text-muted">No pending group registrations.</p>
+                            <p class="text-muted">No groups found.</p>
                         </div>
+                        <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-hover admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Name</th>
+                                        <th>Description</th>
+                                        <th>Leader</th>
+                                        <th>Members</th>
+                                        <th>Max Members</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($groups as $group): ?>
+                                    <tr>
+                                        <td><strong>#<?php echo $group['id']; ?></strong></td>
+                                        <td><?php echo htmlspecialchars($group['name']); ?></td>
+                                        <td><?php echo htmlspecialchars(substr($group['description'], 0, 50)) . (strlen($group['description']) > 50 ? '...' : ''); ?></td>
+                                        <td>
+                                            <?php
+                                            $leader = $pdo->prepare("SELECT username FROM users WHERE id = ?");
+                                            $leader->execute([$group['leader_id']]);
+                                            $leader_name = $leader->fetchColumn();
+                                            echo htmlspecialchars($leader_name ?? 'Unknown');
+                                            ?>
+                                        </td>
+                                        <td><?php echo $group['member_count']; ?></td>
+                                        <td><?php echo $group['max_members']; ?></td>
+                                        <td>
+                                            <span class="badge bg-<?php echo $group['status'] == 'active' ? 'success' : 'secondary'; ?>">
+                                                <?php echo ucfirst($group['status']); ?>
+                                            </span>
+                                        </td>
+                                        <td><?php echo date('M d, Y', strtotime($group['created_at'])); ?></td>
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <button class="btn btn-outline-primary btn-action" onclick="editGroup(<?php echo $group['id']; ?>, <?php echo json_encode($group['name']); ?>, <?php echo json_encode($group['description']); ?>, <?php echo $group['max_members']; ?>, <?php echo json_encode($group['status']); ?>)">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <a href="group_management.php?group_id=<?php echo $group['id']; ?>" class="btn btn-outline-info btn-action">
+                                                    <i class="fas fa-users"></i>
+                                                </a>
+                                                <button class="btn btn-outline-danger btn-action" onclick="deleteGroup(<?php echo $group['id']; ?>)">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Edit Group Modal -->
+                        <div class="modal fade" id="editGroupModal" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Edit Group</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form method="POST">
+                                        <div class="modal-body">
+                                            <input type="hidden" name="group_id" id="edit_group_id">
+                                            <div class="mb-3">
+                                                <label class="form-label">Group Name</label>
+                                                <input type="text" class="form-control" name="group_name" id="edit_group_name" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Description</label>
+                                                <textarea class="form-control" name="group_description" id="edit_group_description" rows="3"></textarea>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Max Members</label>
+                                                <input type="number" class="form-control" name="max_members" id="edit_max_members" min="1" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Status</label>
+                                                <select class="form-control" name="group_status" id="edit_group_status">
+                                                    <option value="active">Active</option>
+                                                    <option value="inactive">Inactive</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" name="edit_group" class="btn btn-primary">Update Group</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- View Members Modal -->
+                        <div class="modal fade" id="viewMembersModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Group Members</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body" id="membersContent">
+                                        <!-- Members will be loaded here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -1257,7 +1742,7 @@ try {
                                         <i class="fas fa-credit-card fa-3x text-success mb-3"></i>
                                         <h5 class="card-title">Payments Report</h5>
                                         <p class="card-text text-muted">Generate detailed report of all payment transactions including customer details and order status.</p>
-                                        <a href="#" class="btn btn-success w-100">
+                                        <a href="generate_payments_report.php" class="btn btn-success w-100">
                                             <i class="fas fa-chart-line me-2"></i>Generate Payments Report
                                         </a>
                                     </div>
@@ -1269,7 +1754,7 @@ try {
                                         <i class="fas fa-users fa-3x text-primary mb-3"></i>
                                         <h5 class="card-title">Users Report</h5>
                                         <p class="card-text text-muted">Generate comprehensive report of all registered users with names and phone numbers.</p>
-                                        <a href="#" class="btn btn-primary w-100">
+                                        <a href="generate_users_report.php" class="btn btn-primary w-100">
                                             <i class="fas fa-user-friends me-2"></i>Generate Users Report
                                         </a>
                                     </div>
@@ -1298,9 +1783,213 @@ try {
                         <h5 class="form-title"><i class="fas fa-comments me-2"></i> Feedback Management</h5>
                     </div>
                     <div class="form-body">
+                        <?php if (empty($feedbacks)): ?>
                         <div class="text-center py-4">
                             <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
                             <p class="text-muted">No feedback received yet.</p>
+                        </div>
+                        <?php else: ?>
+                        <div class="admin-list-group list-group">
+                            <?php foreach ($feedbacks as $feedback): ?>
+                            <div class="list-group-item">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1"><?php echo htmlspecialchars($feedback['subject']); ?></h6>
+                                    <span class="badge bg-<?php echo $feedback['reply'] ? 'success' : 'warning'; ?>">
+                                        <?php echo $feedback['reply'] ? 'Replied' : 'Pending'; ?>
+                                    </span>
+                                </div>
+                                <p class="mb-1 text-muted"><?php echo htmlspecialchars($feedback['message']); ?></p>
+                                <small class="text-muted">
+                                    <i class="fas fa-user me-1"></i><?php echo htmlspecialchars($feedback['name']); ?> |
+                                    <i class="fas fa-envelope me-1"></i><?php echo htmlspecialchars($feedback['email']); ?> |
+                                    <i class="fas fa-star me-1"></i><?php echo htmlspecialchars($feedback['rating']); ?>/5 |
+                                    <i class="fas fa-clock me-1"></i><?php echo date('M d, Y H:i', strtotime($feedback['created_at'])); ?>
+                                    <?php if ($feedback['username']): ?>
+                                    | <i class="fas fa-user-circle me-1"></i><?php echo htmlspecialchars($feedback['username']); ?>
+                                    <?php endif; ?>
+                                </small>
+                                <?php if ($feedback['reply']): ?>
+                                <div class="mt-2 p-2 bg-light rounded">
+                                    <small class="text-muted"><strong>Reply:</strong> <?php echo htmlspecialchars($feedback['reply']); ?></small>
+                                </div>
+                                <?php endif; ?>
+                                <div class="mt-2 d-flex gap-2">
+                                    <button class="btn btn-outline-primary btn-action flex-fill" onclick="viewFeedback(<?php echo $feedback['id']; ?>)">
+                                        <i class="fas fa-eye me-1"></i> View
+                                    </button>
+                                    <button class="btn btn-outline-success btn-action flex-fill" onclick="replyFeedback(<?php echo $feedback['id']; ?>)">
+                                        <i class="fas fa-reply me-1"></i> Reply
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-action flex-fill" onclick="deleteFeedback(<?php echo $feedback['id']; ?>)">
+                                        <i class="fas fa-trash me-1"></i> Delete
+                                    </button>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Notification Management -->
+                <div class="form-card animate-on-scroll mb-4" id="notifications-management">
+                    <div class="form-header">
+                        <h5 class="form-title"><i class="fas fa-bell me-2"></i> Notification Management</h5>
+                    </div>
+                    <div class="form-body">
+                        <div class="row">
+                            <!-- Create Notification -->
+                            <div class="col-lg-6 mb-4">
+                                <h6 class="mb-3"><i class="fas fa-plus-circle me-2"></i>Create System Notification</h6>
+                                <form method="POST">
+                                    <div class="mb-3">
+                                        <label for="notification_title" class="form-label">Title</label>
+                                        <input type="text" class="form-control" id="notification_title" name="notification_title" placeholder="Notification title" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="notification_message" class="form-label">Message</label>
+                                        <textarea class="form-control" id="notification_message" name="notification_message" rows="3" placeholder="Notification message" required></textarea>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="notification_type" class="form-label">Type</label>
+                                            <select class="form-control" id="notification_type" name="notification_type" required>
+                                                <option value="system">System</option>
+                                                <option value="challenge">Challenge</option>
+                                                <option value="payment">Payment</option>
+                                                <option value="general">General</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="notification_priority" class="form-label">Priority</label>
+                                            <select class="form-control" id="notification_priority" name="notification_priority" required>
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="action_url" class="form-label">Action URL (Optional)</label>
+                                            <input type="url" class="form-control" id="action_url" name="action_url" placeholder="https://example.com">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="action_text" class="form-label">Action Text (Optional)</label>
+                                            <input type="text" class="form-control" id="action_text" name="action_text" placeholder="Click here">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="expires_at" class="form-label">Expires At (Optional)</label>
+                                        <input type="datetime-local" class="form-control" id="expires_at" name="expires_at">
+                                    </div>
+
+                                    <!-- Target Selection -->
+                                    <div class="mb-3">
+                                        <label class="form-label">Send To:</label>
+                                        <div class="mb-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="target_type" id="target_all" value="all" checked>
+                                                <label class="form-check-label" for="target_all">
+                                                    <i class="fas fa-users me-2"></i>All Users
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="target_type" id="target_user" value="user">
+                                                <label class="form-check-label" for="target_user">
+                                                    <i class="fas fa-user me-2"></i>Specific User
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="target_type" id="target_challenge" value="challenge">
+                                                <label class="form-check-label" for="target_challenge">
+                                                    <i class="fas fa-users-cog me-2"></i>Challenge Members
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <!-- Specific User Selection -->
+                                        <div id="user_selection" class="mb-3" style="display: none;">
+                                            <label for="target_user_id" class="form-label">Select User:</label>
+                                            <select class="form-control" id="target_user_id" name="target_user_id">
+                                                <option value="">Choose a user...</option>
+                                                <?php foreach ($users as $user): ?>
+                                                <option value="<?php echo $user['id']; ?>">
+                                                    <?php echo htmlspecialchars($user['username'] . ' (' . $user['email'] . ')'); ?>
+                                                </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+
+                                        <!-- Challenge Selection -->
+                                        <div id="challenge_selection" class="mb-3" style="display: none;">
+                                            <label for="target_challenge_id" class="form-label">Select Challenge:</label>
+                                            <select class="form-control" id="target_challenge_id" name="target_challenge_id">
+                                                <option value="">Choose a challenge...</option>
+                                                <?php
+                                                try {
+                                                    $stmt = $pdo->query("SELECT id, name FROM challenges WHERE status = 'active' ORDER BY name");
+                                                    $active_challenges = $stmt->fetchAll();
+                                                    foreach ($active_challenges as $challenge): ?>
+                                                    <option value="<?php echo $challenge['id']; ?>">
+                                                        <?php echo htmlspecialchars($challenge['name']); ?>
+                                                    </option>
+                                                    <?php endforeach;
+                                                } catch (Exception $e) {
+                                                    // Handle silently
+                                                }
+                                                ?>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" name="create_notification" class="btn btn-admin w-100">
+                                        <i class="fas fa-paper-plane me-2"></i> Send Notification
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- Recent Notifications -->
+                            <div class="col-lg-6">
+                                <h6 class="mb-3"><i class="fas fa-list me-2"></i>Recent Notifications</h6>
+                                <div class="admin-list-group list-group">
+                                    <?php
+                                    try {
+                                        $stmt = $pdo->query("SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT 10");
+                                        $recent_notifications = $stmt->fetchAll();
+
+                                        if (empty($recent_notifications)): ?>
+                                            <div class="text-center py-4">
+                                                <i class="fas fa-bell-slash fa-3x text-muted mb-3"></i>
+                                                <p class="text-muted">No notifications sent yet.</p>
+                                            </div>
+                                        <?php else: ?>
+                                            <?php foreach ($recent_notifications as $notification): ?>
+                                                <div class="list-group-item">
+                                                    <div class="d-flex w-100 justify-content-between">
+                                                        <h6 class="mb-1"><?php echo htmlspecialchars($notification['title']); ?></h6>
+                                                        <span class="badge bg-<?php echo $notification['priority'] === 'high' ? 'danger' : ($notification['priority'] === 'medium' ? 'warning' : 'secondary'); ?>">
+                                                            <?php echo ucfirst($notification['priority']); ?>
+                                                        </span>
+                                                    </div>
+                                                    <p class="mb-1 text-muted"><?php echo htmlspecialchars(substr($notification['message'], 0, 100)) . (strlen($notification['message']) > 100 ? '...' : ''); ?></p>
+                                                    <small class="text-muted">
+                                                        <i class="fas fa-tag me-1"></i><?php echo ucfirst($notification['notification_type']); ?> |
+                                                        <i class="fas fa-clock me-1"></i><?php echo date('M d, H:i', strtotime($notification['created_at'])); ?>
+                                                    </small>
+                                                    <div class="mt-2">
+                                                        <button class="btn btn-outline-danger btn-action" onclick="deleteNotification(<?php echo $notification['id']; ?>)">
+                                                            <i class="fas fa-trash me-1"></i> Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    <?php } catch (Exception $e) {
+                                        echo '<div class="text-center py-4"><p class="text-muted">Error loading notifications.</p></div>';
+                                    } ?>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1459,21 +2148,41 @@ try {
             document.querySelectorAll('.sidebar-menu a[href^="#"]').forEach(anchor => {
                 anchor.addEventListener('click', function (e) {
                     e.preventDefault();
-                    
+
                     const targetId = this.getAttribute('href');
                     if (targetId === '#') return;
-                    
+
                     const targetElement = document.querySelector(targetId);
                     if (targetElement) {
                         window.scrollTo({
                             top: targetElement.offsetTop - 100,
                             behavior: 'smooth'
                         });
-                        
+
                         // Close sidebar on mobile after clicking
                         if (window.innerWidth <= 768) {
                             sidebar.classList.remove('active');
                         }
+                    }
+                });
+            });
+
+            // Target selection functionality for notifications
+            const targetRadios = document.querySelectorAll('input[name="target_type"]');
+            const userSelection = document.getElementById('user_selection');
+            const challengeSelection = document.getElementById('challenge_selection');
+
+            targetRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'user') {
+                        userSelection.style.display = 'block';
+                        challengeSelection.style.display = 'none';
+                    } else if (this.value === 'challenge') {
+                        userSelection.style.display = 'none';
+                        challengeSelection.style.display = 'block';
+                    } else {
+                        userSelection.style.display = 'none';
+                        challengeSelection.style.display = 'none';
                     }
                 });
             });
@@ -1538,6 +2247,229 @@ try {
                 const inputDelete = document.createElement('input');
                 inputDelete.type = 'hidden';
                 inputDelete.name = 'delete_material';
+                inputDelete.value = '1';
+
+                form.appendChild(inputId);
+                form.appendChild(inputDelete);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function deleteNotification(id) {
+            if (confirm('Are you sure you want to delete this notification? This action cannot be undone.')) {
+                // Create a form to submit delete request
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const inputId = document.createElement('input');
+                inputId.type = 'hidden';
+                inputId.name = 'notification_id';
+                inputId.value = id;
+
+                const inputDelete = document.createElement('input');
+                inputDelete.type = 'hidden';
+                inputDelete.name = 'delete_notification';
+                inputDelete.value = '1';
+
+                form.appendChild(inputId);
+                form.appendChild(inputDelete);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        // Feedback management functions
+        function viewFeedback(id) {
+            // For now, just alert the feedback ID. In a real implementation, this could open a modal or redirect to a detailed view
+            alert('Viewing feedback ID: ' + id);
+        }
+
+        function replyFeedback(id) {
+            const reply = prompt('Enter your reply to this feedback:');
+            if (reply !== null && reply.trim() !== '') {
+                // Create a form to submit reply
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const inputId = document.createElement('input');
+                inputId.type = 'hidden';
+                inputId.name = 'feedback_id';
+                inputId.value = id;
+
+                const inputReply = document.createElement('input');
+                inputReply.type = 'hidden';
+                inputReply.name = 'reply_feedback';
+                inputReply.value = reply.trim();
+
+                form.appendChild(inputId);
+                form.appendChild(inputReply);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function deleteFeedback(id) {
+            if (confirm('Are you sure you want to delete this feedback? This action cannot be undone.')) {
+                // Create a form to submit delete request
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const inputId = document.createElement('input');
+                inputId.type = 'hidden';
+                inputId.name = 'feedback_id';
+                inputId.value = id;
+
+                const inputDelete = document.createElement('input');
+                inputDelete.type = 'hidden';
+                inputDelete.name = 'delete_feedback';
+                inputDelete.value = '1';
+
+                form.appendChild(inputId);
+                form.appendChild(inputDelete);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        // Group management functions
+        function editGroup(id, name, description, maxMembers, status) {
+            document.getElementById('edit_group_id').value = id;
+            document.getElementById('edit_group_name').value = name;
+            document.getElementById('edit_group_description').value = description;
+            document.getElementById('edit_max_members').value = maxMembers;
+            document.getElementById('edit_group_status').value = status;
+
+            const modal = new bootstrap.Modal(document.getElementById('editGroupModal'));
+            modal.show();
+        }
+
+        function viewGroupMembers(groupId) {
+            // Fetch group members via AJAX or show modal with loading
+            const modal = new bootstrap.Modal(document.getElementById('viewMembersModal'));
+            const membersContent = document.getElementById('membersContent');
+
+            // Show loading state
+            membersContent.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading members...</p></div>';
+
+            modal.show();
+
+            // For now, we'll simulate loading members. In a real implementation, you'd make an AJAX call
+            setTimeout(() => {
+                loadGroupMembers(groupId);
+            }, 500);
+        }
+
+        function loadGroupMembers(groupId) {
+            // This would typically be an AJAX call to fetch members
+            // For demonstration, we'll create a sample member list
+            const membersContent = document.getElementById('membersContent');
+
+            const sampleMembers = [
+                { id: 1, username: 'john_doe', email: 'john@example.com', status: 'active', joined_at: '2023-06-01' },
+                { id: 2, username: 'jane_smith', email: 'jane@example.com', status: 'invited', joined_at: '2023-06-05' },
+                { id: 3, username: 'bob_wilson', email: 'bob@example.com', status: 'accepted', joined_at: '2023-06-10' }
+            ];
+
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>Username</th><th>Email</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead><tbody>';
+
+            sampleMembers.forEach(member => {
+                html += `
+                    <tr>
+                        <td>${member.username}</td>
+                        <td>${member.email}</td>
+                        <td>
+                            <select class="form-select form-select-sm" onchange="changeMemberStatus(${member.id}, this.value)">
+                                <option value="invited" ${member.status === 'invited' ? 'selected' : ''}>Invited</option>
+                                <option value="accepted" ${member.status === 'accepted' ? 'selected' : ''}>Accepted</option>
+                                <option value="active" ${member.status === 'active' ? 'selected' : ''}>Active</option>
+                            </select>
+                        </td>
+                        <td>${new Date(member.joined_at).toLocaleDateString()}</td>
+                        <td>
+                            <button class="btn btn-outline-danger btn-sm" onclick="removeMember(${member.id}, '${member.username}')">
+                                <i class="fas fa-user-minus"></i> Remove
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            membersContent.innerHTML = html;
+        }
+
+        function changeMemberStatus(memberId, newStatus) {
+            if (confirm(`Are you sure you want to change this member's status to "${newStatus}"?`)) {
+                // Create form to submit status change
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const inputId = document.createElement('input');
+                inputId.type = 'hidden';
+                inputId.name = 'member_id';
+                inputId.value = memberId;
+
+                const inputStatus = document.createElement('input');
+                inputStatus.type = 'hidden';
+                inputStatus.name = 'member_status';
+                inputStatus.value = newStatus;
+
+                const inputChange = document.createElement('input');
+                inputChange.type = 'hidden';
+                inputChange.name = 'change_member_status';
+                inputChange.value = '1';
+
+                form.appendChild(inputId);
+                form.appendChild(inputStatus);
+                form.appendChild(inputChange);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function removeMember(memberId, username) {
+            if (confirm(`Are you sure you want to remove "${username}" from this group? This action cannot be undone.`)) {
+                // Create form to submit member removal
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const inputId = document.createElement('input');
+                inputId.type = 'hidden';
+                inputId.name = 'member_id';
+                inputId.value = memberId;
+
+                const inputRemove = document.createElement('input');
+                inputRemove.type = 'hidden';
+                inputRemove.name = 'remove_member';
+                inputRemove.value = '1';
+
+                form.appendChild(inputId);
+                form.appendChild(inputRemove);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        function deleteGroup(groupId) {
+            if (confirm('Are you sure you want to delete this group? This will remove all members and cannot be undone.')) {
+                // Create form to submit group deletion
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const inputId = document.createElement('input');
+                inputId.type = 'hidden';
+                inputId.name = 'group_id';
+                inputId.value = groupId;
+
+                const inputDelete = document.createElement('input');
+                inputDelete.type = 'hidden';
+                inputDelete.name = 'delete_group';
                 inputDelete.value = '1';
 
                 form.appendChild(inputId);

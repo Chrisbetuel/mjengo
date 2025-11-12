@@ -111,6 +111,32 @@ CREATE TABLE direct_purchases (
     FOREIGN KEY (material_id) REFERENCES materials(id)
 );
 
+-- Groups table
+CREATE TABLE groups (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    leader_id INT NOT NULL,
+    challenge_id INT,
+    max_members INT DEFAULT 10,
+    status ENUM('active', 'inactive') DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (leader_id) REFERENCES users(id),
+    FOREIGN KEY (challenge_id) REFERENCES challenges(id)
+);
+
+-- Group members table
+CREATE TABLE group_members (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    group_id INT NOT NULL,
+    user_id INT NOT NULL,
+    status ENUM('active', 'pending', 'inactive') DEFAULT 'active',
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES groups(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE KEY unique_group_member (group_id, user_id)
+);
+
 -- Feedback table
 CREATE TABLE feedback (
     id INT PRIMARY KEY AUTO_INCREMENT,

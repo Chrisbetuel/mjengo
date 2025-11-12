@@ -10,6 +10,67 @@ $translations = loadLanguage();
 
 $user_id = $_SESSION['user_id'];
 
+// Get unread notification count for navbar
+$unread_notifications = getUnreadNotificationCount($user_id);
+
+// Get recent notifications for display
+$recent_notifications = getInAppNotifications($user_id, 5, false);
+
+// Get user preferences for customization
+$current_theme = getCurrentTheme($user_id);
+$current_font_size = getCurrentFontSize($user_id);
+$dashboard_widgets = getDashboardWidgets($user_id);
+
+// Convert widgets to associative array for easier access
+$widget_settings = [];
+foreach ($dashboard_widgets as $widget) {
+    $widget_settings[$widget['widget_name']] = $widget;
+}
+
+// Apply theme variables
+$theme_vars = applyThemeVariables($current_theme);
+
+// Define available dashboard widgets
+$available_widgets = [
+    'active_challenges' => [
+        'title' => 'Your Active Challenges',
+        'icon' => 'fas fa-tasks',
+        'description' => 'View and manage your active challenges'
+    ],
+    'terminated_challenges' => [
+        'title' => 'Terminated Challenges',
+        'icon' => 'fas fa-ban',
+        'description' => 'View challenges that were terminated'
+    ],
+    'group_invitations' => [
+        'title' => 'Group Invitations',
+        'icon' => 'fas fa-envelope',
+        'description' => 'Manage your group invitations'
+    ],
+    'user_groups' => [
+        'title' => 'Your Groups',
+        'icon' => 'fas fa-users',
+        'description' => 'View and manage your groups'
+    ],
+    'payment_plans' => [
+        'title' => 'Your Payment Plans',
+        'icon' => 'fas fa-credit-card',
+        'description' => 'Track your installment payments'
+    ]
+];
+
+// Get enabled widgets ordered by display_order
+$enabled_widgets = array_filter($widget_settings, function($widget) {
+    return $widget['is_visible'] == 1;
+});
+
+// Sort by display_order
+usort($enabled_widgets, function($a, $b) {
+    $a_order = $a['display_order'] ?? 0;
+    $b_order = $b['display_order'] ?? 0;
+    return $a_order <=> $b_order;
+});
+
 // Fetch user info
 $stmt = $pdo->prepare("SELECT username, email, created_at FROM users WHERE id = ?");
 $stmt->execute([$user_id]);
@@ -31,23 +92,23 @@ $user_challenges = $stmt->fetchAll();
 
 // Fetch user's group invitations
 $stmt = $pdo->prepare("
-    SELECT gm.id, gr.group_name, gr.description, u.username as leader_name, gm.invited_at
+    SELECT gm.id, g.name as group_name, g.description, u.username as leader_name, gm.joined_at as invited_at
     FROM group_members gm
-    JOIN group_registrations gr ON gm.group_id = gr.id
-    JOIN users u ON gr.leader_id = u.id
+    JOIN groups g ON gm.group_id = g.id
+    JOIN users u ON g.leader_id = u.id
     WHERE gm.user_id = ? AND gm.status = 'invited'
-    ORDER BY gm.invited_at DESC
+    ORDER BY gm.joined_at DESC
 ");
 $stmt->execute([$user_id]);
 $group_invitations = $stmt->fetchAll();
 
 // Fetch user's groups (where they are members)
 $stmt = $pdo->prepare("
-    SELECT gr.id, gr.group_name, gr.description, gr.status as group_status, u.username as leader_name, gm.joined_at, gm.status as member_status
+    SELECT g.id, g.name as group_name, g.description, g.status as group_status, u.username as leader_name, gm.joined_at, gm.status as member_status, g.leader_id
     FROM group_members gm
-    JOIN group_registrations gr ON gm.group_id = gr.id
-    JOIN users u ON gr.leader_id = u.id
-    WHERE gm.user_id = ? AND gm.status = 'accepted'
+    JOIN groups g ON gm.group_id = g.id
+    JOIN users u ON g.leader_id = u.id
+    WHERE gm.user_id = ? AND gm.status IN ('active', 'accepted')
     ORDER BY gm.joined_at DESC
 ");
 $stmt->execute([$user_id]);
@@ -267,7 +328,21 @@ foreach ($lipa_kidogo_payments as $payment) {
         .nav-link.active::after {
             width: 100%;
         }
-        
+
+        .notification-badge {
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            padding: 2px 6px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            min-width: 18px;
+            text-align: center;
+        }
+
         /* Dashboard Content */
         .dashboard-content {
             padding: 100px 0 50px;
@@ -559,9 +634,19 @@ foreach ($lipa_kidogo_payments as $payment) {
                     <li class="nav-item"><a class="nav-link" href="index.php">Home</a></li>
                     <li class="nav-item"><a class="nav-link" href="challenges.php">Challenges</a></li>
                     <li class="nav-item"><a class="nav-link" href="register_group.php">Register Group</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#groups">My Groups</a></li>
                     <li class="nav-item"><a class="nav-link" href="lipa_kidogo.php">Lipa Kidogo</a></li>
                     <li class="nav-item"><a class="nav-link" href="direct_purchase.php">Direct Purchase</a></li>
                     <li class="nav-item"><a class="nav-link active" href="dashboard.php">Dashboard</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="dashboard_notifications.php">
+                            <i class="fas fa-bell me-1"></i><?php echo __('notifications'); ?>
+                            <?php if ($unread_notifications > 0): ?>
+                                <span class="notification-badge"><?php echo $unread_notifications; ?></span>
+                            <?php endif; ?>
+                        </a>
+                    </li>
+                    <li class="nav-item"><a class="nav-link" href="dashboard_settings.php"><i class="fas fa-cog me-1"></i>Settings</a></li>
                     <?php if (isAdmin()): ?>
                         <li class="nav-item"><a class="nav-link" href="admin.php">Admin</a></li>
                     <?php endif; ?>
@@ -648,69 +733,71 @@ foreach ($lipa_kidogo_payments as $payment) {
             </div>
 
             <!-- Active Challenges Section -->
-            <h2 class="mb-4 animate-on-scroll">Your Active Challenges</h2>
+            <?php if (isset($enabled_widgets['active_challenges'])): ?>
+                <h2 class="mb-4 animate-on-scroll">Your Active Challenges</h2>
 
-            <?php if (empty($active_challenges)): ?>
-                <div class="empty-state animate-on-scroll">
-                    <div class="empty-state-icon">
-                        <i class="fas fa-inbox"></i>
+                <?php if (empty($active_challenges)): ?>
+                    <div class="empty-state animate-on-scroll">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-inbox"></i>
+                        </div>
+                        <h3>No Active Challenges</h3>
+                        <p class="mb-4">You haven't joined any challenges yet. Start your building journey today!</p>
+                        <a href="challenges.php" class="btn btn-primary btn-lg">Browse Challenges</a>
                     </div>
-                    <h3>No Active Challenges</h3>
-                    <p class="mb-4">You haven't joined any challenges yet. Start your building journey today!</p>
-                    <a href="challenges.php" class="btn btn-primary btn-lg">Browse Challenges</a>
-                </div>
-            <?php else: ?>
-                <div class="row">
-                    <?php foreach ($active_challenges as $challenge): ?>
-                        <div class="col-lg-6 mb-4">
-                            <div class="challenge-card animate-on-scroll">
-                                <div class="challenge-header">
-                                    <h5 class="challenge-title"><?php echo htmlspecialchars($challenge['name']); ?> (Join Challenge Times <?php echo $challenge['join_attempt']; ?>)</h5>
-                                    <p class="mb-0 opacity-75">Queue Position: #<?php echo $challenge['queue_position']; ?></p>
-                                </div>
-                                    <div class="challenge-body">
-                                    <p class="card-text"><?php echo htmlspecialchars($challenge['description']); ?></p>
-
-                                    <div class="row mb-3">
-                                        <div class="col-sm-6">
-                                            <p class="mb-2"><i class="fas fa-money-bill-wave me-2 text-success"></i><strong>Daily:</strong> TSh <?php echo number_format($challenge['daily_amount'], 2); ?></p>
-                                            <p class="mb-2"><i class="fas fa-calendar-day me-2 text-primary"></i><strong>Started:</strong> <?php echo date('M d, Y', strtotime($challenge['start_date'])); ?></p>
-                                        </div>
-                                        <div class="col-sm-6">
-                                            <p class="mb-2"><i class="fas fa-flag-checkered me-2 text-warning"></i><strong>Ends:</strong> <?php echo date('M d, Y', strtotime($challenge['end_date'])); ?></p>
-                                            <p class="mb-2"><i class="fas fa-clock me-2 text-info"></i><strong>Days Left:</strong> <?php echo $challenge_progress[$challenge['id']]['days_remaining']; ?></p>
-                                        </div>
+                <?php else: ?>
+                    <div class="row">
+                        <?php foreach ($active_challenges as $challenge): ?>
+                            <div class="col-lg-6 mb-4">
+                                <div class="challenge-card animate-on-scroll">
+                                    <div class="challenge-header">
+                                        <h5 class="challenge-title"><?php echo htmlspecialchars($challenge['name']); ?> (Join Challenge Times <?php echo $challenge['join_attempt']; ?>)</h5>
+                                        <p class="mb-0 opacity-75">Queue Position: #<?php echo $challenge['queue_position']; ?></p>
                                     </div>
+                                        <div class="challenge-body">
+                                        <p class="card-text"><?php echo htmlspecialchars($challenge['description']); ?></p>
 
-                                    <?php $progress = $challenge_progress[$challenge['id']]; ?>
-                                    <div class="progress-container">
-                                        <h6>Today's Payment Progress</h6>
-                                        <div class="progress mb-2">
-                                            <div class="progress-bar" role="progressbar"
-                                                 style="width: <?php echo $progress['payment_percentage']; ?>%"
-                                                 aria-valuenow="<?php echo $progress['payment_percentage']; ?>"
-                                                 aria-valuemin="0" aria-valuemax="100">
+                                        <div class="row mb-3">
+                                            <div class="col-sm-6">
+                                                <p class="mb-2"><i class="fas fa-money-bill-wave me-2 text-success"></i><strong>Daily:</strong> TSh <?php echo number_format($challenge['daily_amount'], 2); ?></p>
+                                                <p class="mb-2"><i class="fas fa-calendar-day me-2 text-primary"></i><strong>Started:</strong> <?php echo date('M d, Y', strtotime($challenge['start_date'])); ?></p>
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <p class="mb-2"><i class="fas fa-flag-checkered me-2 text-warning"></i><strong>Ends:</strong> <?php echo date('M d, Y', strtotime($challenge['end_date'])); ?></p>
+                                                <p class="mb-2"><i class="fas fa-clock me-2 text-info"></i><strong>Days Left:</strong> <?php echo $challenge_progress[$challenge['id']]['days_remaining']; ?></p>
                                             </div>
                                         </div>
-                                        <div class="d-flex justify-content-between">
-                                            <small class="text-muted"><?php echo $progress['paid_today']; ?>/<?php echo $progress['total_participants']; ?> paid today</small>
-                                            <small class="text-muted"><?php echo $progress['payment_percentage']; ?>%</small>
-                                        </div>
-                                    </div>
 
-                                    <div class="d-flex gap-2 mt-3">
-                                        <a href="payment_gateway.php?type=challenge&challenge_id=<?php echo $challenge['id']; ?>&amount=<?php echo $challenge['daily_amount']; ?>" class="btn btn-success btn-action flex-fill">
-                                            <i class="fas fa-credit-card me-2"></i> Pay Now
-                                        </a>
-                                        <button class="btn btn-primary btn-action flex-fill" onclick="viewDetails(<?php echo $challenge['id']; ?>)">
-                                            <i class="fas fa-eye me-2"></i> Details
-                                        </button>
+                                        <?php $progress = $challenge_progress[$challenge['id']]; ?>
+                                        <div class="progress-container">
+                                            <h6>Today's Payment Progress</h6>
+                                            <div class="progress mb-2">
+                                                <div class="progress-bar" role="progressbar"
+                                                     style="width: <?php echo $progress['payment_percentage']; ?>%"
+                                                     aria-valuenow="<?php echo $progress['payment_percentage']; ?>"
+                                                     aria-valuemin="0" aria-valuemax="100">
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted"><?php echo $progress['paid_today']; ?>/<?php echo $progress['total_participants']; ?> paid today</small>
+                                                <small class="text-muted"><?php echo $progress['payment_percentage']; ?>%</small>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex gap-2 mt-3">
+                                            <a href="payment_gateway.php?type=challenge&challenge_id=<?php echo $challenge['id']; ?>&amount=<?php echo $challenge['daily_amount']; ?>" class="btn btn-success btn-action flex-fill">
+                                                <i class="fas fa-credit-card me-2"></i> Pay Now
+                                            </a>
+                                            <button class="btn btn-primary btn-action flex-fill" onclick="viewDetails(<?php echo $challenge['id']; ?>)">
+                                                <i class="fas fa-eye me-2"></i> Details
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
 
             <!-- Terminated Challenges Section -->
@@ -787,8 +874,18 @@ foreach ($lipa_kidogo_payments as $payment) {
             <?php endif; ?>
 
             <!-- Your Groups Section -->
-            <?php if (!empty($user_groups)): ?>
-                <h2 class="mb-4 animate-on-scroll">Your Groups</h2>
+            <h2 id="groups" class="mb-4 animate-on-scroll">Your Groups</h2>
+
+            <?php if (empty($user_groups)): ?>
+                <div class="empty-state animate-on-scroll">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <h3>No Groups Yet</h3>
+                    <p class="mb-4">You haven't joined any groups yet. Create or join a group to start collaborating!</p>
+                    <a href="register_group.php" class="btn btn-primary btn-lg">Create a Group</a>
+                </div>
+            <?php else: ?>
                 <div class="row">
                     <?php foreach ($user_groups as $group): ?>
                         <div class="col-lg-6 mb-4">
@@ -807,12 +904,19 @@ foreach ($lipa_kidogo_payments as $payment) {
                                     </p>
 
                                     <div class="d-flex gap-2 mt-3">
-                                        <a href="invite_members.php?group_id=<?php echo $group['id']; ?>" class="btn btn-primary btn-action flex-fill">
-                                            <i class="fas fa-user-plus me-2"></i> Manage Members
-                                        </a>
-                                        <button class="btn btn-info btn-action flex-fill" onclick="viewGroupDetails(<?php echo $group['id']; ?>)">
-                                            <i class="fas fa-eye me-2"></i> Group Details
-                                        </button>
+                                        <?php if ($group['leader_id'] == $_SESSION['user_id']): ?>
+                                            <a href="group_management.php?group_id=<?php echo $group['id']; ?>" class="btn btn-primary btn-action flex-fill">
+                                                <i class="fas fa-cog me-2"></i> Manage Group
+                                            </a>
+                                            <a href="group_management.php?group_id=<?php echo $group['id']; ?>" class="btn btn-info btn-action flex-fill">
+                                                <i class="fas fa-eye me-2"></i> View Details
+                                            </a>
+                                        <?php else: ?>
+                                            <a href="group_management.php?group_id=<?php echo $group['id']; ?>" class="btn btn-info btn-action flex-fill">
+                                                <i class="fas fa-eye me-2"></i> View Group Details
+                                            </a>
+                                            <div class="flex-fill"></div>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </div>

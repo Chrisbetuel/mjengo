@@ -3,14 +3,26 @@
 define('BASE_URL', 'http://localhost/mjengo');
 define('SITE_NAME', 'Mjengo Challenge');
 
+// Theme constants
+define('AVAILABLE_THEMES', ['light', 'dark']);
+define('AVAILABLE_FONT_SIZES', ['small', 'medium', 'large']);
+define('DEFAULT_THEME', 'light');
+define('DEFAULT_FONT_SIZE', 'medium');
+
 // Session configuration
 session_start();
 
 // Include database connection
 require_once 'core/db.php';
 
+// Include preferences system
+require_once 'core/preferences.php';
+
 // Include language system
 require_once 'core/language.php';
+
+// Include notifications system
+require_once 'core/notifications.php';
 
 // Handle language switching
 handleLanguageSwitch();
